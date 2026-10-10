@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Historic Places</string>
+    <string name="my_location">My location</string>
+    <string name="attribution">Data: National Park Service, National Register of Historic Places. Many sites are private property — please respect owners. Map tiles © Esri.</string>
+    <string name="nomination_papers">Nomination papers</string>
+    <string name="directions">Directions</string>
+    <string name="close">Close</string>
+    <string name="nhl_yes">yes</string>
+    <string name="nhl_no">no</string>
+    <string name="loading_places">Loading historic places…</string>
+    <string name="history_section_title">History</string>
+    <string name="history_attribution">Summary from the National Register nomination</string>
+    <string name="history_none">No summary yet</string>
+</resources>

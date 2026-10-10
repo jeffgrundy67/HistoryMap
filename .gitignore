@@ -1,0 +1,48 @@
+# ---- Android / Gradle ----
+.gradle/
+build/
+**/build/
+android/app/release/
+captures/
+.externalNativeBuild/
+.cxx/
+.kotlin/
+*.apk
+*.aab
+*.ap_
+*.dex
+*.class
+local.properties
+
+# ---- Signing keys ----
+*.jks
+*.keystore
+keystore.properties
+
+# ---- IDE ----
+.idea/
+*.iml
+.vscode/
+*.swp
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+desktop.ini
+ehthumbs.db
+
+# ---- Secrets / config ----
+api/config.php
+.env
+.env.*
+!.env.example
+
+# ---- Dependencies ----
+vendor/
+node_modules/
+
+# ---- Python / tools scratch ----
+__pycache__/
+*.pyc
+*.log
+web/summaries.backup_*.json

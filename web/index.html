@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  History Map: web version of the HistoricPlaces Android app.
+  Upload index.html and summaries.json to the same folder (e.g. public_html/HistoryMap/).
+  Note: opening this file directly from disk (file://) usually blocks fetch("summaries.json"),
+  so History shows "No summary yet". Use a web server (or python -m http.server) for local testing.
+  Optional deep link: index.html?ref=66000152 opens that NRHP listing.
+  ?photos=1 turns on "Only places with photos" (shows every place in photos.json at any zoom); ?photos=0 turns it off.
+-->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#1f3a5f">
+<meta name="description" content="Map of nearby National Register of Historic Places listings, with history summaries.">
+<title>History Map: Nearby Historic Places</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 30 40%22%3E%3Cpath d=%22M15 1C7.3 1 1 7.2 1 14.9 1 25.3 15 39 15 39s14-13.7 14-24.1C29 7.2 22.7 1 15 1z%22 fill=%22%232a6fdb%22/%3E%3Ccircle cx=%2215%22 cy=%2215%22 r=%225.5%22 fill=%22white%22/%3E%3C/svg%3E">
+
+<!-- Leaflet + MarkerCluster from the unpkg CDN (integrity hashes verified 2026-10-05). -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha384-sHL9NAb7lN7rfvG5lfHpm643Xkcjzp4jFvuavGOndn6pjVqS6ny56CAt3nsEVT4H" crossorigin="anonymous">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+      integrity="sha384-pmjIAcz2bAn0xukfxADbZIb3t8oRT9Sv0rvO+BR5Csr6Dhqq+nZs59P0pPKQJkEV" crossorigin="anonymous">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+      integrity="sha384-wgw+aLYNQ7dlhK47ZPK7FRACiq7ROZwgFNg0m04avm4CaXS+Z9Y7nMu8yNjBKYC+" crossorigin="anonymous">
+
+<style>
+  :root {
+    --navy: #1f3a5f;
+    --blue: #2a6fdb;
+    --gold: #e0a800;
+    --text: #1d232b;
+    --muted: #5b6673;
+    --panel-w: 380px;
+    --footer-h: 30px;
+    --safe-b: env(safe-area-inset-bottom, 0px);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--text); }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+
+  /* ---------- Map fills everything above the footer ---------- */
+  #map { flex: 1 1 auto; width: 100%; background: #e8e4da; }
+
+  /* ---------- Floating title chip (top-left) ---------- */
+  .title-chip {
+    position: absolute; top: calc(10px + env(safe-area-inset-top, 0px)); left: 56px; z-index: 900;
+    background: var(--navy); color: #fff; border-radius: 18px; padding: 7px 14px;
+    font-weight: 600; font-size: 15px; box-shadow: 0 2px 6px rgba(0,0,0,.3); pointer-events: none;
+  }
+
+  /* ---------- Status banner (top-center): loading / zoom in / errors ---------- */
+  #status {
+    position: absolute; top: calc(54px + env(safe-area-inset-top, 0px)); left: 50%; transform: translateX(-50%);
+    z-index: 900; max-width: calc(100% - 24px);
+    background: rgba(29,35,43,.88); color: #fff; font-size: 14px; line-height: 1.3;
+    padding: 8px 14px; border-radius: 16px; box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    text-align: center; display: none;
+  }
+  #status.show { display: block; }
+
+  /* ---------- Locate-me button (Leaflet control) ---------- */
+  .locate-btn {
+    width: 44px; height: 44px; display: flex; align-items: center; justify-content: center;
+    background: #fff; border: none; cursor: pointer; padding: 0;
+  }
+  .locate-btn svg { width: 24px; height: 24px; fill: var(--navy); }
+  .locate-btn.busy svg { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .leaflet-touch .leaflet-bar a, .leaflet-touch .leaflet-bar button { width: 44px; height: 44px; line-height: 44px; }
+
+  /* ---------- "Only places with photos" pill (Leaflet control, top-right) ---------- */
+  .photo-toggle {
+    display: flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 13px 6px 10px;
+    background: #fff; color: var(--navy); border-radius: 18px; box-shadow: 0 2px 6px rgba(0,0,0,.3);
+    font-size: 14px; font-weight: 600; line-height: 1.2; cursor: pointer; user-select: none; -webkit-user-select: none; white-space: nowrap;
+  }
+  .photo-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--navy); cursor: pointer; flex: 0 0 auto; }
+  .photo-toggle.on { background: var(--navy); color: #fff; }
+  .photo-toggle.on input { accent-color: #fff; }
+  .photo-toggle.busy { opacity: .75; }
+  .leaflet-top.leaflet-right .photo-toggle-wrap { margin-top: calc(10px + env(safe-area-inset-top, 0px)); }
+  .photo-toggle-wrap[hidden] { display: none; }
+  /* Narrow phones: wrap the label onto two lines so it never runs into the title chip. */
+  @media (max-width: 389px) { .photo-toggle { white-space: normal; max-width: 128px; font-size: 13px; padding: 5px 11px 5px 9px; border-radius: 16px; } }
+
+  /* ---------- Pins: teardrop SVG, blue = listed, gold = National Historic Landmark ---------- */
+  .pin { width: 30px; height: 40px; }
+  .pin svg { width: 30px; height: 40px; filter: drop-shadow(0 1px 2px rgba(0,0,0,.45)); }
+  .pin.selected svg { transform: scale(1.25); transform-origin: 50% 100%; }
+
+  /* ---------- Footer ---------- */
+  footer {
+    flex: 0 0 auto; min-height: var(--footer-h); padding: 6px 10px calc(6px + var(--safe-b));
+    background: #f4f1ea; border-top: 1px solid #d9d4c7; font-size: 12px; color: var(--muted); text-align: center;
+  }
+
+  /* ---------- Details panel: bottom sheet on phones ---------- */
+  #panel {
+    position: fixed; z-index: 1000; background: #fff; box-shadow: 0 -4px 18px rgba(0,0,0,.25);
+    left: 0; right: 0; bottom: 0; max-height: 62vh; border-radius: 16px 16px 0 0;
+    transform: translateY(105%); transition: transform .25s ease; display: flex; flex-direction: column;
+    padding-bottom: var(--safe-b);
+  }
+  #panel.open { transform: translateY(0); }
+  .grab { width: 40px; height: 5px; border-radius: 3px; background: #c9ced6; margin: 8px auto 0; flex: 0 0 auto; }
+  .panel-head { display: flex; align-items: flex-start; gap: 8px; padding: 10px 16px 6px; flex: 0 0 auto; }
+  .panel-head h2 { font-size: 19px; line-height: 1.25; margin: 0; flex: 1; }
+  .close-btn { border: none; background: #eef1f5; border-radius: 50%; width: 34px; height: 34px; font-size: 20px; line-height: 34px; cursor: pointer; color: var(--muted); flex: 0 0 auto; }
+  .panel-body { overflow-y: auto; padding: 0 16px 16px; -webkit-overflow-scrolling: touch; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 10px; margin: 0 6px 8px 0; }
+  .badge.nhl { background: #fff3c4; color: #7a5a00; border: 1px solid var(--gold); }
+  .badge.nr { background: #e3edff; color: #1a4fa8; border: 1px solid #9dbcf5; }
+  dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 14px 0 4px; font-size: 14px; }
+  dl.facts dt { color: var(--muted); }
+  dl.facts dd { margin: 0; }
+  .history h3 { font-size: 15px; margin: 8px 0 4px; color: var(--navy); }
+  .history p { margin: 0 0 6px; font-size: 15px; line-height: 1.45; }
+  .history .none { color: var(--muted); font-style: italic; }
+  .history .src { font-size: 12px; color: var(--muted); }
+  .photo { margin: 0 0 10px; }
+  .photo a { display: block; }
+  .photo img { display: block; width: 100%; height: auto; border-radius: 10px; background: #eef1f5; }
+  .photo .cap { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
+  .links { display: flex; gap: 10px; flex-wrap: wrap; }
+  .links a {
+    flex: 1 1 140px; text-align: center; text-decoration: none; font-weight: 600; font-size: 15px;
+    padding: 11px 12px; border-radius: 10px; background: var(--navy); color: #fff;
+  }
+  .links a.secondary { background: #eef1f5; color: var(--navy); }
+  .links .disabled { flex: 1 1 140px; text-align: center; padding: 11px 12px; border-radius: 10px; background: #f3f3f3; color: #999; font-size: 14px; }
+
+  /* Action buttons stay visible at the bottom of the panel. */
+  .panel-foot { flex: 0 0 auto; padding: 10px 16px 12px; border-top: 1px solid #e6e9ee; background: #fff; }
+  .panel-foot:empty { display: none; }
+
+  /* Phones: keep the (required) Esri attribution to one line; tap it to read the full credits. */
+  @media (max-width: 767px) {
+    .leaflet-control-attribution {
+      font-size: 10px; max-width: calc(100vw - 12px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+    }
+    .leaflet-control-attribution.expanded { white-space: normal; }
+  }
+
+  /* ---------- Desktop / tablet: side panel on the right ---------- */
+  @media (min-width: 768px) {
+    #panel {
+      top: 0; bottom: var(--footer-h); left: auto; right: 0; width: var(--panel-w); max-height: none;
+      border-radius: 0; box-shadow: -4px 0 18px rgba(0,0,0,.2); transform: translateX(105%);
+    }
+    #panel.open { transform: translateX(0); }
+    .grab { display: none; }
+    .panel-head { padding-top: 16px; }
+    body.panel-open .leaflet-right { right: var(--panel-w); transition: right .25s ease; }
+  }
+</style>
+</head>
+<body>
+
+<div id="map" role="application" aria-label="Map of historic places"></div>
+<div class="title-chip">History Map</div>
+<div id="status" role="status" aria-live="polite"></div>
+
+<aside id="panel" aria-hidden="true" aria-labelledby="p-name">
+  <div class="grab"></div>
+  <div class="panel-head">
+    <h2 id="p-name">Place</h2>
+    <button class="close-btn" id="p-close" aria-label="Close details">&times;</button>
+  </div>
+  <div class="panel-body" id="p-body"></div>
+  <div class="panel-foot" id="p-foot"></div>
+</aside>
+
+<footer>
+  Data: National Park Service, National Register of Historic Places. Many sites are private property; please view from public areas.
+</footer>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha384-cxOPjt7s7Iz04uaHJceBmS+qpjv2JkIHNVcuOrM+YHwZOmJGBXI00mdUXEq65HTH" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"
+        integrity="sha384-eXVCORTRlv4FUUgS/xmOyr66XBVraen8ATNLMESp92FKXLAMiKkerixTiBvXriZr" crossorigin="anonymous"></script>
+<script>
+(function () {
+  "use strict";
+
+  // ---------------- Settings (same values as the Android app) ----------------
+  var NPS_QUERY = "https://mapservices.nps.gov/arcgis/rest/services/cultural_resources/nrhp_locations/MapServer/0/query";
+  var OUT_FIELDS = "NRIS_Refnum,RESNAME,ResType,Address,City,County,State,STATUS,Is_NHL,CertDate,NARA_URL";
+  var MAX_RECORDS = 500;        // cap per request
+  var MIN_QUERY_ZOOM = 10;      // below this, show "zoom in" instead of querying
+  var DEBOUNCE_MS = 650;        // wait after the map stops moving
+  var MONTGOMERY = [32.3777, -86.3006];
+  var START_ZOOM = 13, USER_ZOOM = 14;
+
+  // ---------------- Map + Esri tiles ----------------
+  var map = L.map("map", { zoomControl: true, minZoom: 4, maxZoom: 19, tap: true })
+             .setView(MONTGOMERY, START_ZOOM);
+
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+    maxZoom: 19,
+    attribution: 'Tiles &copy; <a href="https://www.esri.com/">Esri</a> &mdash; Sources: Esri, HERE, Garmin, USGS, Intermap, INCREMENT P, NRCan, Esri Japan, METI, Esri China (Hong Kong), Esri Korea, Esri (Thailand), NGCC, &copy; OpenStreetMap contributors, and the GIS User Community'
+  }).addTo(map);
+
+  var cluster = L.markerClusterGroup({ disableClusteringAtZoom: 17, showCoverageOnHover: false, maxClusterRadius: 50, chunkedLoading: true });
+  map.addLayer(cluster);
+
+  // ---------------- Helpers ----------------
+  var statusEl = document.getElementById("status");
+  function setStatus(msg) { statusEl.textContent = msg || ""; statusEl.classList.toggle("show", !!msg); }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+  function isNhl(v) { v = String(v || "").trim().toUpperCase(); return v === "X" || v === "Y" || v === "TRUE"; }
+  function prettyType(t) { t = String(t || "").trim(); return t ? t.charAt(0).toUpperCase() + t.slice(1) : "—"; }
+  var MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+  function prettyDate(d) {
+    // CertDate is a string like "1966-10-15" or sometimes partial ("1996-06-").
+    d = String(d || "").trim().replace(/-+$/, "");
+    var m = d.match(/^(\d{4})-(\d{1,2})(?:-(\d{1,2}))?$/);
+    if (!m) return d || "—";
+    var mon = MONTHS[parseInt(m[2], 10) - 1] || "";
+    return m[3] ? (mon + " " + parseInt(m[3], 10) + ", " + m[1]) : (mon + " " + m[1]);
+  }
+  function titleCase(s) { return String(s || "").toLowerCase().replace(/\b([a-z])/g, function (c) { return c.toUpperCase(); }); }
+  function safeHttpUrl(u) { u = String(u || "").trim(); return /^https?:\/\//i.test(u) ? u : ""; }
+
+  // Pin icons (SVG teardrop). data-ref lets you find a pin by its NRIS number.
+  function pinIcon(nhl, ref) {
+    var fill = nhl ? "#e0a800" : "#2a6fdb", stroke = nhl ? "#8a6700" : "#174a9c";
+    return L.divIcon({
+      className: "",
+      html: '<div class="pin" data-ref="' + esc(ref) + '"><svg viewBox="0 0 30 40" aria-hidden="true">' +
+            '<path d="M15 1C7.3 1 1 7.2 1 14.9 1 25.3 15 39 15 39s14-13.7 14-24.1C29 7.2 22.7 1 15 1z" fill="' + fill + '" stroke="' + stroke + '" stroke-width="2"/>' +
+            '<circle cx="15" cy="15" r="5.5" fill="#fff"/></svg></div>',
+      iconSize: [30, 40], iconAnchor: [15, 39]
+    });
+  }
+
+  // ---------------- History summaries (summaries.json, keyed by NRIS ref number) ----------------
+  var summaries = null, summariesFailed = false;
+  fetch("summaries.json", { cache: "no-cache" })
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (j) { summaries = j; if (currentPlace) renderPanel(currentPlace); })
+    .catch(function (e) {
+      summariesFailed = true;
+      console.warn("Could not load summaries.json (opening via file:// blocks fetch; use a web server).", e);
+      if (currentPlace) renderPanel(currentPlace);
+    });
+
+  // ---------------- NPS query: CORS fetch, with JSONP fallback ----------------
+  var jsonpCount = 0;
+  // ---------------- Photos (photos.json, keyed by NRIS ref number; optional) ----------------
+  var photos = null;
+  fetch("photos.json", { cache: "no-cache" })
+    .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+    .then(function (j) { photos = (j && typeof j === "object") ? j : null; if (currentPlace) renderPanel(currentPlace); onPhotosReady(); })
+    .catch(function () { photos = null; onPhotosReady(); }); // no photos.json = no photos (and no photo filter), quietly
+
+  function photoHtml(ref) {
+    var ph = photos && photos[ref];
+    var file = ph && String(ph.file || "").trim();
+    if (!file || /^(javascript|data):/i.test(file)) return "";
+    var cap = "Photo from the National Register nomination" + (ph.caption ? ": " + esc(ph.caption) : "");
+    return '<figure class="photo">' +
+             '<a href="' + esc(file) + '" target="_blank" rel="noopener">' +
+               '<img src="' + esc(file) + '" loading="lazy" decoding="async" alt="' + esc("Photo: " + (ph.caption || "exterior view")) + '">' +
+             "</a>" +
+             '<figcaption class="cap">' + cap + "</figcaption>" +
+           "</figure>";
+  }
+
+
+  function jsonp(url, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var cb = "__nrhp_cb" + (++jsonpCount), s = document.createElement("script"), done = false;
+      var timer = setTimeout(function () { finish(); reject(new Error("JSONP timeout")); }, timeoutMs || 20000);
+      function finish() { done = true; clearTimeout(timer); try { delete window[cb]; } catch (e) { window[cb] = undefined; } if (s.parentNode) s.parentNode.removeChild(s); }
+      window[cb] = function (data) { if (!done) { finish(); resolve(data); } };
+      s.onerror = function () { if (!done) { finish(); reject(new Error("JSONP load error")); } };
+      s.src = url + "&callback=" + cb;
+      document.head.appendChild(s);
+    });
+  }
+  var useJsonp = false;
+  function queryNps(params, signal) {
+    var qs = Object.keys(params).map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); }).join("&");
+    var url = NPS_QUERY + "?" + qs;
+    if (useJsonp) return jsonp(url);
+    return fetch(url, { signal: signal, credentials: "omit" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .catch(function (e) {
+        if (e && e.name === "AbortError") throw e;
+        // A CORS/network failure shows up as a TypeError. Switch to JSONP for the rest of the session.
+        console.warn("fetch failed, falling back to JSONP:", e);
+        useJsonp = true;
+        return jsonp(url);
+      });
+  }
+
+  // ---------------- Load places for the visible area ----------------
+  var reqSeq = 0, aborter = null, debounceTimer = null;
+  var markersByRef = {};
+
+  function scheduleLoad() { clearTimeout(debounceTimer); if (photoMode) return; debounceTimer = setTimeout(loadVisible, DEBOUNCE_MS); }
+
+  function loadVisible() {
+    if (photoMode) { showPhotoPlaces(); return; } // photo-only mode: cached list, no zoom gate, no cap, no bbox queries
+    if (map.getZoom() < MIN_QUERY_ZOOM) {
+      cluster.clearLayers(); markersByRef = {};
+      setStatus("Zoom in to see historic places");
+      return;
+    }
+    var b = map.getBounds();
+    var west = Math.max(-180, b.getWest()), east = Math.min(180, b.getEast());
+    var south = Math.max(-90, b.getSouth()), north = Math.min(90, b.getNorth());
+    var seq = ++reqSeq;
+    if (aborter) aborter.abort();
+    aborter = ("AbortController" in window) ? new AbortController() : null;
+    setStatus("Loading historic places…");
+
+    queryNps({
+      where: "1=1",
+      geometry: [west, south, east, north].map(function (n) { return n.toFixed(6); }).join(","),
+      geometryType: "esriGeometryEnvelope",
+      inSR: 4326,
+      spatialRel: "esriSpatialRelIntersects",
+      outFields: OUT_FIELDS,
+      returnGeometry: true,
+      outSR: 4326,
+      resultRecordCount: MAX_RECORDS,
+      f: "json"
+    }, aborter && aborter.signal).then(function (data) {
+      if (seq !== reqSeq) return; // a newer request replaced this one
+      if (data && data.error) throw new Error(data.error.message || "Service error");
+      var feats = (data && data.features) || [];
+      showPlaces(feats);
+      if (data.exceededTransferLimit || feats.length >= MAX_RECORDS) {
+        setStatus("Showing the first " + MAX_RECORDS + " places. Zoom in to see them all.");
+      } else if (!feats.length) {
+        setStatus("No mapped places in this area");
+        setTimeout(function () { if (seq === reqSeq) setStatus(""); }, 2500);
+      } else {
+        setStatus("");
+      }
+    }).catch(function (e) {
+      if (e && e.name === "AbortError") return;
+      if (seq !== reqSeq) return;
+      console.error(e);
+      setStatus("Couldn't load places. Check your connection and move the map to retry.");
+    });
+  }
+
+  function showPlaces(feats) {
+    var next = {}, toAdd = [];
+    feats.forEach(function (f) {
+      var a = f.attributes || {}, g = f.geometry || {};
+      if (typeof g.x !== "number" || typeof g.y !== "number") return;
+      var ref = String(a.NRIS_Refnum || "").trim() || ("oid" + g.x + "," + g.y);
+      if (next[ref]) return; // de-duplicate repeated points for one listing
+      var place = {
+        ref: ref, name: a.RESNAME || "Unnamed place", address: a.Address, city: a.City, county: a.County,
+        state: a.State, type: a.ResType, nhl: isNhl(a.Is_NHL), listed: a.CertDate, status: a.STATUS,
+        nara: a.NARA_URL, lat: g.y, lon: g.x
+      };
+      var m = markersByRef[ref];
+      if (!m) {
+        m = L.marker([g.y, g.x], { icon: pinIcon(place.nhl, ref), title: place.name, keyboard: true, riseOnHover: true });
+        m.on("click", function () { openPlace(m.place, m); });
+        toAdd.push(m);
+      }
+      m.place = place;
+      next[ref] = m;
+    });
+    var toRemove = [];
+    Object.keys(markersByRef).forEach(function (r) { if (!next[r] && markersByRef[r] !== selectedMarker) toRemove.push(markersByRef[r]); else if (!next[r]) next[r] = markersByRef[r]; });
+    if (toRemove.length) cluster.removeLayers(toRemove);
+    if (toAdd.length) cluster.addLayers(toAdd);
+    markersByRef = next;
+  }
+
+  map.on("moveend", scheduleLoad);
+
+  // ---------------- "Only places with photos" mode ----------------
+  // Shows every place listed in photos.json at any zoom. Their locations are fetched once with
+  // NRIS_Refnum IN (...) queries (chunked) and cached; panning/zooming does not re-query.
+  var PHOTO_KEY = "historymap.photosOnly", PHOTO_CHUNK = 60;
+  var photoMode = false, photoFeats = null, photoPromise = null, photoToggle = null, photoInput = null;
+
+  function photoRefs() {
+    return Object.keys(photos || {}).filter(function (r) { var ph = photos[r]; return ph && String(ph.file || "").trim(); })
+      .map(function (r) { return r.replace(/[^0-9A-Za-z]/g, ""); }).filter(Boolean);
+  }
+  function loadPhotoFeats() {
+    if (photoFeats) return Promise.resolve(photoFeats);
+    if (photoPromise) return photoPromise;
+    var refs = photoRefs(), chunks = [];
+    for (var i = 0; i < refs.length; i += PHOTO_CHUNK) chunks.push(refs.slice(i, i + PHOTO_CHUNK));
+    photoPromise = Promise.all(chunks.map(function (c) {
+      return queryNps({ where: "NRIS_Refnum IN ('" + c.join("','") + "')", outFields: OUT_FIELDS, returnGeometry: true, outSR: 4326,
+                        resultRecordCount: 2000, f: "json" })
+        .then(function (d) { if (d && d.error) throw new Error(d.error.message || "Service error"); return (d && d.features) || []; });
+    })).then(function (lists) {
+      photoFeats = [].concat.apply([], lists);
+      return photoFeats;
+    }, function (e) { photoPromise = null; throw e; }); // allow a retry next time
+    return photoPromise;
+  }
+  function photoBounds() {
+    var pts = (photoFeats || []).filter(function (f) { return f.geometry && typeof f.geometry.x === "number"; })
+      .map(function (f) { return [f.geometry.y, f.geometry.x]; });
+    return pts.length ? L.latLngBounds(pts) : null;
+  }
+  function showPhotoPlaces(fit) {
+    // Stop any in-flight bounding-box request so it can't overwrite the photo set.
+    ++reqSeq; if (aborter) { aborter.abort(); aborter = null; }
+    if (!photoFeats) setStatus("Loading places with photos…");
+    if (photoToggle) photoToggle.classList.add("busy");
+    var seq = reqSeq;
+    loadPhotoFeats().then(function (feats) {
+      if (photoToggle) photoToggle.classList.remove("busy");
+      if (!photoMode || seq !== reqSeq) return;
+      showPlaces(feats);
+      var n = Object.keys(markersByRef).length;
+      setStatus(n ? "Showing " + n + " places with photos" : "No places with photos found");
+      setTimeout(function () { if (photoMode && seq === reqSeq) setStatus(""); }, 2500);
+      if (fit) { var b = photoBounds(); if (b) map.fitBounds(b, { padding: [40, 40], maxZoom: 15 }); }
+    }).catch(function (e) {
+      if (photoToggle) photoToggle.classList.remove("busy");
+      if (!photoMode || seq !== reqSeq) return;
+      console.error(e);
+      setStatus("Couldn't load places with photos. Check your connection and try again.");
+    });
+  }
+  function setPhotoMode(on, opts) {
+    opts = opts || {};
+    on = !!on && !!photoRefs().length;
+    if (photoInput) photoInput.checked = on;
+    if (photoToggle) photoToggle.classList.toggle("on", on);
+    if (opts.save) { try { localStorage.setItem(PHOTO_KEY, on ? "1" : "0"); } catch (e) {} }
+    if (on === photoMode && !opts.force) return;
+    photoMode = on;
+    clearTimeout(debounceTimer);
+    if (on && currentPlace && !(photos && photos[currentPlace.ref])) closePanel();
+    showPlaces([]); // clear pins (keeps the selected one), then load the new set
+    if (on) showPhotoPlaces(!!opts.fit);
+    else { ++reqSeq; setStatus(""); loadVisible(); }
+  }
+
+  // MarkerCluster can leave the viewport empty after a non-animated jump of 5+ zoom levels (e.g. a cluster tap
+  // from far out). In normal mode the follow-up bounding-box query repaints it; in photo mode nothing re-queries,
+  // so nudge MarkerCluster to re-render the current view once the jump has finished.
+  // (MarkerCluster ignores moveend while its own zoom animation runs, so wait for its "animationend".)
+  var repaintPending = false;
+  function repaintClusters() { if (repaintPending && photoMode) { repaintPending = false; map.fire("moveend"); } }
+  map.on("viewreset", function () { if (photoMode) { repaintPending = true; setTimeout(repaintClusters, 900); } });
+  cluster.on("animationend", function () { setTimeout(repaintClusters, 0); });
+
+  var PhotoControl = L.Control.extend({
+    options: { position: "topright" },
+    onAdd: function () {
+      var wrap = L.DomUtil.create("div", "leaflet-control photo-toggle-wrap");
+      wrap.hidden = true; // shown only once photos.json has loaded
+      var label = L.DomUtil.create("label", "photo-toggle", wrap);
+      label.innerHTML = '<input type="checkbox" id="photos-only"> <span>Only places with photos</span>';
+      photoToggle = label; photoInput = label.querySelector("input");
+      L.DomEvent.disableClickPropagation(wrap); L.DomEvent.disableScrollPropagation(wrap);
+      photoInput.addEventListener("change", function () { setPhotoMode(photoInput.checked, { save: true, fit: photoInput.checked }); });
+      return wrap;
+    }
+  });
+  map.addControl(new PhotoControl());
+
+  var photoStartFromUrl = null; // set at startup from ?photos=1 / ?photos=0
+  function onPhotosReady() {
+    var ok = photoRefs().length > 0;
+    if (photoToggle) photoToggle.parentNode.hidden = !ok;
+    if (!ok) { if (photoMode) setPhotoMode(false); return; } // failed/empty photos.json: hide the control
+    var want = photoStartFromUrl;
+    if (want == null) { try { want = localStorage.getItem(PHOTO_KEY) === "1"; } catch (e) { want = false; } }
+    else { try { localStorage.setItem(PHOTO_KEY, want ? "1" : "0"); } catch (e) {} }
+    // Fit to all photo places only for an explicit ?photos=1 link without ?ref; a remembered setting keeps the current view.
+    if (want) setPhotoMode(true, { fit: photoStartFromUrl === true && !new URLSearchParams(location.search).get("ref") });
+  }
+
+  // ---------------- Details panel ----------------
+  var panel = document.getElementById("panel"), pName = document.getElementById("p-name"), pBody = document.getElementById("p-body"), pFoot = document.getElementById("p-foot");
+  var currentPlace = null, selectedMarker = null;
+
+  function renderPanel(p) {
+    pName.textContent = p.name;
+    var s = summaries && summaries[p.ref];
+    var hist;
+    if (s && s.summary) {
+      hist = "<h3>History</h3><p>" + esc(s.summary) + "</p>" +
+             '<p class="src">Summarized from the National Register nomination' + (s.heading ? " (" + esc(s.heading) + ")" : "") + ".</p>";
+    } else if (!summaries && !summariesFailed) {
+      hist = '<h3>History</h3><p class="none">Loading…</p>';
+    } else {
+      hist = '<h3>History</h3><p class="none">No summary yet.</p>';
+    }
+    var nara = safeHttpUrl(p.nara);
+    var dir = "https://www.google.com/maps/dir/?api=1&destination=" + p.lat.toFixed(6) + "," + p.lon.toFixed(6);
+    var cityLine = [p.city, titleCase(p.state)].filter(Boolean).join(", ");
+    pBody.innerHTML =
+      photoHtml(p.ref) +
+      (p.nhl ? '<span class="badge nhl">★ National Historic Landmark</span>' : '<span class="badge nr">National Register</span>') +
+      '<div class="history">' + hist + "</div>" +
+      '<dl class="facts">' +
+        "<dt>Address</dt><dd>" + esc(p.address || "—") + "</dd>" +
+        "<dt>City</dt><dd>" + esc(cityLine || "—") + "</dd>" +
+        "<dt>County</dt><dd>" + esc(p.county || "—") + "</dd>" +
+        "<dt>Type</dt><dd>" + esc(prettyType(p.type)) + "</dd>" +
+        "<dt>NHL</dt><dd>" + (p.nhl ? "Yes" : "No") + "</dd>" +
+        "<dt>Listed</dt><dd>" + esc(prettyDate(p.listed)) + "</dd>" +
+        "<dt>Ref #</dt><dd>" + esc(p.ref) + "</dd>" +
+      "</dl>";
+    // Hide the photo block entirely if the image can't be loaded (no broken-image icon).
+    Array.prototype.forEach.call(pBody.querySelectorAll(".photo img"), function (img) {
+      function drop() { var f = img.closest(".photo"); if (f && f.parentNode) f.parentNode.removeChild(f); }
+      img.addEventListener("error", drop);
+      if (img.complete && img.naturalWidth === 0 && img.currentSrc) drop();
+    });
+    pFoot.innerHTML =
+      '<div class="links">' +
+        (nara ? '<a href="' + esc(nara) + '" target="_blank" rel="noopener">Nomination papers</a>'
+              : '<span class="disabled">No nomination papers online</span>') +
+        '<a class="secondary" href="' + esc(dir) + '" target="_blank" rel="noopener">Directions</a>' +
+      "</div>";
+    pBody.scrollTop = 0;
+  }
+
+  function openPlace(p, marker) {
+    currentPlace = p;
+    if (selectedMarker && selectedMarker._icon) { var old = selectedMarker._icon.querySelector(".pin"); if (old) old.classList.remove("selected"); }
+    selectedMarker = marker || null;
+    if (marker && marker._icon) { var el = marker._icon.querySelector(".pin"); if (el) el.classList.add("selected"); }
+    renderPanel(p);
+    panel.classList.add("open");
+    document.body.classList.add("panel-open");
+    panel.setAttribute("aria-hidden", "false");
+    // On phones, nudge the map so the pin stays visible above the sheet.
+    if (window.innerWidth < 768) {
+      var pt = map.latLngToContainerPoint([p.lat, p.lon]);
+      var target = map.getSize().y * 0.22; // keep the pin in the visible strip above the sheet
+      if (Math.abs(pt.y - target) > 40) map.panBy([0, pt.y - target], { animate: true });
+    }
+  }
+  function closePanel() {
+    panel.classList.remove("open");
+    document.body.classList.remove("panel-open");
+    panel.setAttribute("aria-hidden", "true");
+    if (selectedMarker && selectedMarker._icon) { var el = selectedMarker._icon.querySelector(".pin"); if (el) el.classList.remove("selected"); }
+    selectedMarker = null; currentPlace = null;
+  }
+  document.getElementById("p-close").addEventListener("click", closePanel);
+  map.on("click", closePanel);
+  document.addEventListener("keydown", function (e) { if (e.key === "Escape") closePanel(); });
+
+  // Swipe the bottom sheet down to close it (phones).
+  (function () {
+    var startY = null;
+    panel.addEventListener("touchstart", function (e) { if (pBody.scrollTop <= 0) startY = e.touches[0].clientY; }, { passive: true });
+    panel.addEventListener("touchend", function (e) {
+      if (startY != null && e.changedTouches[0].clientY - startY > 70) closePanel();
+      startY = null;
+    }, { passive: true });
+  })();
+
+  // Tap the one-line attribution (phones) to show all tile credits.
+  var attrEl = document.querySelector(".leaflet-control-attribution");
+  if (attrEl) attrEl.addEventListener("click", function (e) { if (e.target.tagName !== "A") attrEl.classList.toggle("expanded"); });
+
+  // ---------------- Location ----------------
+  var youMarker = null, locateBtn = null;
+  function showYou(lat, lon, acc) {
+    if (!youMarker) {
+      youMarker = L.circleMarker([lat, lon], { radius: 8, color: "#fff", weight: 3, fillColor: "#1a73e8", fillOpacity: 1 }).addTo(map);
+    } else youMarker.setLatLng([lat, lon]);
+  }
+  function locate(isStartup) {
+    if (!("geolocation" in navigator)) { if (!isStartup) setStatus("Location isn't available in this browser"); return; }
+    if (locateBtn) locateBtn.classList.add("busy");
+    navigator.geolocation.getCurrentPosition(function (pos) {
+      if (locateBtn) locateBtn.classList.remove("busy");
+      var c = pos.coords;
+      showYou(c.latitude, c.longitude, c.accuracy);
+      map.setView([c.latitude, c.longitude], Math.max(map.getZoom(), USER_ZOOM));
+    }, function (err) {
+      if (locateBtn) locateBtn.classList.remove("busy");
+      if (isStartup) return; // quietly stay on Montgomery
+      setStatus(err.code === 1 ? "Location permission denied. Showing the map without your position." : "Couldn't get your location.");
+      setTimeout(function () { setStatus(""); scheduleLoad(); }, 3000);
+    }, { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  }
+
+  var LocateControl = L.Control.extend({
+    options: { position: "topleft" },
+    onAdd: function () {
+      var wrap = L.DomUtil.create("div", "leaflet-bar leaflet-control");
+      var btn = L.DomUtil.create("button", "locate-btn", wrap);
+      btn.type = "button"; btn.title = "Show my location"; btn.setAttribute("aria-label", "Show my location");
+      btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 100 8 4 4 0 000-8zm8.94 3A8.99 8.99 0 0013 3.06V1h-2v2.06A8.99 8.99 0 003.06 11H1v2h2.06A8.99 8.99 0 0011 20.94V23h2v-2.06A8.99 8.99 0 0020.94 13H23v-2h-2.06zM12 19a7 7 0 110-14 7 7 0 010 14z"/></svg>';
+      L.DomEvent.disableClickPropagation(wrap);
+      L.DomEvent.on(btn, "click", function () { locate(false); });
+      locateBtn = btn;
+      return wrap;
+    }
+  });
+  map.addControl(new LocateControl());
+
+  // ---------------- Optional deep link: index.html?ref=66000152 opens that place ----------------
+  function openByRef(ref) {
+    queryNps({ where: "NRIS_Refnum='" + ref.replace(/[^0-9A-Za-z]/g, "") + "'", outFields: OUT_FIELDS, returnGeometry: true, outSR: 4326, f: "json" })
+      .then(function (d) {
+        var f = d && d.features && d.features[0];
+        if (!f) { setStatus("That place isn't on the public map."); return; }
+        map.setView([f.geometry.y, f.geometry.x], 17);
+        // Wait for the viewport load, then tap the pin.
+        var tries = 0, iv = setInterval(function () {
+          var m = markersByRef[ref];
+          if (m || ++tries > 40) { clearInterval(iv); if (m) openPlace(m.place, m); }
+        }, 250);
+      }).catch(function (e) { console.error(e); });
+  }
+
+  // ---------------- Start ----------------
+  var params = new URLSearchParams(location.search);
+  var deepRef = params.get("ref");
+  if (params.has("photos")) photoStartFromUrl = /^(1|true|yes|on)$/i.test(params.get("photos"));
+  if (deepRef) openByRef(deepRef);
+  else locate(true);
+  loadVisible();
+
+  // Small hook for testing/debugging in the browser console.
+  window.HistoryMap = { map: map, openByRef: openByRef, markers: function () { return markersByRef; },
+                        photoMode: function () { return photoMode; }, setPhotoMode: function (on) { setPhotoMode(on, { save: true, fit: on }); } };
+})();
+</script>
+</body>
+</html>

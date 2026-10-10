@@ -1,0 +1,14 @@
+* text=auto
+
+# Scripts that run under Bash keep LF even when checked out on Windows
+*.sh text eol=lf
+gradlew text eol=lf
+# Windows batch files keep CRLF
+*.bat text eol=crlf
+
+# Binary files
+*.jpg binary
+*.jpeg binary
+*.png binary
+*.jar binary
+*.pdf binary
