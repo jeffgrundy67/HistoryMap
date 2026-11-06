@@ -1,0 +1,83 @@
+# Build
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+.idea/
+*.swp
+*~
+
+# .NET
+project.lock.json
+project.fragment.lock.json
+artifacts/
+*.nupkg
+*.snupkg
+nuget.exe
+packages/
+!packages/build/
+
+# Test / coverage
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.trx
+
+# Secrets / local config
+appsettings.*.local.json
+secrets.json
+*.pfx
+*.key
+.env
+.env.*
+!.env.example
+
+# Azure / publish profiles
+*.PublishSettings
+*.azurePubxml
+PublishScripts/
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Android (placeholder app later)
+android/**/build/
+android/**/.gradle/
+android/**/local.properties
+android/**/*.iml
+android/**/captures/
+android/**/.cxx/
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Node / web tooling if added later
+node_modules/
+dist/
+.next/
+.nuxt/
+.vite/
+
+# Editor
+*.code-workspace
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# Misc
+*.tmp
+*.bak
+*.orig

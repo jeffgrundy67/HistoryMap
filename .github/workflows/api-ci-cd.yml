@@ -1,0 +1,79 @@
+name: API CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "tests/**"
+      - "database/**"
+      - ".github/workflows/api-ci-cd.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "api/**"
+      - "tests/**"
+      - "database/**"
+      - ".github/workflows/api-ci-cd.yml"
+  workflow_dispatch:
+
+env:
+  DOTNET_VERSION: "10.0.x"
+  AZURE_WEBAPP_NAME: historymap-api
+  AZURE_WEBAPP_PACKAGE_PATH: ./publish
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore HistoryMap.sln
+
+      - name: Build
+        run: dotnet build HistoryMap.sln --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test HistoryMap.sln --configuration Release --no-build --verbosity normal
+
+      - name: Publish
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        run: dotnet publish api/HistoryMap.Api.csproj --configuration Release --no-build --output ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+
+      - name: Upload artifact
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v4
+        with:
+          name: historymap-api
+          path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+
+  deploy:
+    needs: build-test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Download artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: historymap-api
+          path: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: ${{ env.AZURE_WEBAPP_PACKAGE_PATH }}

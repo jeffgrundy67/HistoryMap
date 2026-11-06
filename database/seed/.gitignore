@@ -1,0 +1,5 @@
+# Keep samples; ignore real inventory dumps
+*
+!.gitignore
+!*.sample.json
+!README.md

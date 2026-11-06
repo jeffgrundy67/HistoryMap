@@ -1,0 +1,17 @@
+[
+  {
+    "ref": "SAMPLE001",
+    "name": "Sample Historic Place",
+    "latitude": 38.907200,
+    "longitude": -77.036900,
+    "city": "Washington",
+    "state": "DC",
+    "placeType": "building",
+    "isNhl": false,
+    "summaryText": "Placeholder summary for local seed testing.",
+    "sourceHeading": "Sample",
+    "confidence": 0.500,
+    "sourceUrl": null,
+    "reviewNote": "Replace with real summaries.json before production import."
+  }
+]

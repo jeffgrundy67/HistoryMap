@@ -1,0 +1,11 @@
+[
+  {
+    "ref": "SAMPLE001",
+    "blobPath": "places/SAMPLE001/main.jpg",
+    "caption": "Sample photo",
+    "source": "inventory",
+    "widthPx": 1200,
+    "heightPx": 800,
+    "sortOrder": 0
+  }
+]

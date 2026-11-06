@@ -1,0 +1,13 @@
+@host = https://localhost:7XXX
+
+### Health
+GET {{host}}/health
+
+### Places in bbox (DC-ish sample)
+GET {{host}}/api/v1/places?bbox=-77.1,38.85,-76.9,38.95&zoom=12
+
+### Place detail
+GET {{host}}/api/v1/places/SAMPLE001
+
+### Places with photos
+GET {{host}}/api/v1/places/with-photos
