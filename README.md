@@ -17,14 +17,17 @@ Monorepo for the History Map shared backend (Azure) and future web/Android clien
 
 ## API (first cut)
 
-| Method | Path | Notes |
-|--------|------|-------|
-| GET | `/api/v1/places?bbox=minLng,minLat,maxLng,maxLat&zoom=` | Map pins |
-| GET | `/api/v1/places/{ref}` | Place + summary + photo **URLs** |
-| GET | `/api/v1/places/with-photos` | Refs with ≥1 photo |
-| GET | `/health` or `/api/v1/health` | Liveness + DB probe |
+| Method | Path | Auth | Notes |
+|--------|------|------|-------|
+| GET | `/api/v1/places?bbox=minLng,minLat,maxLng,maxLat&zoom=` | Anonymous | Map pins |
+| GET | `/api/v1/places/{ref}` | Anonymous | Place + summary + photo **URLs** |
+| GET | `/api/v1/places/with-photos` | Anonymous | Refs with ≥1 photo |
+| GET | `/health` or `/api/v1/health` | Anonymous | Liveness + DB probe |
+| PUT/POST | `/api/v1/ingest/places/{ref}` | Entra Bearer | Upsert place + summary |
+| PUT/POST | `/api/v1/ingest/photos` | Entra Bearer | Upsert photo metadata |
+| POST | `/api/v1/ingest/batch` | Entra Bearer | Batch upsert |
 
-Photos: SQL stores relative `BlobPath` only. Responses use `BlobStorage:ContainerBaseUrl` + path.
+Photos: SQL stores relative `BlobPath` only. Responses use `BlobStorage:ContainerBaseUrl` + path. Blob **binary** upload is separate (see `docs/azure-ad-ingest.md`).
 
 ## Local development
 
@@ -51,7 +54,8 @@ dotnet run --project api -- --seed \
 
 ## Azure
 
-Follow the user-facing runbook: **[docs/azure-setup.md](../../docs/azure-setup.md)** in the Project store (or the copy you keep with this repo after push).
+- Infra runbook: **[docs/azure-setup.md](docs/azure-setup.md)** (Project store copy may also exist)
+- **Entra ingest (Grok Bot):** **[docs/azure-ad-ingest.md](docs/azure-ad-ingest.md)** — portal checklist, App Service keys, client_credentials example
 
 Required App Service / GitHub secrets:
 
@@ -59,6 +63,7 @@ Required App Service / GitHub secrets:
 - `BlobStorage__ContainerBaseUrl` — public container (or CDN) base URL
 - `APPLICATIONINSIGHTS_CONNECTION_STRING` — optional but wired
 - `AZURE_WEBAPP_PUBLISH_PROFILE` — GitHub Actions deploy secret
+- `AzureAd__TenantId` / `AzureAd__ClientId` / `AzureAd__Audience` — Entra for write APIs (see ingest doc)
 
 App Service runtime: **.NET 10**.
 

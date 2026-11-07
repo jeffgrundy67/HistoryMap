@@ -190,8 +190,9 @@ Leave this until the default `*.azurewebsites.net` endpoint is healthy.
 - [ ] Publish profile → GitHub `AZURE_WEBAPP_PUBLISH_PROFILE`
 - [ ] Deploy from `main` succeeds; `/health` returns healthy
 - [ ] Seed importer run; sample place detail shows Blob URLs
+- [ ] Entra ingest for Grok Bot — see [azure-ad-ingest.md](azure-ad-ingest.md)
 - [ ] (Later) CNAME `api.jsgrundy.com` + TLS
 
 ## What stays out of this pass
 
-Play Store packaging, bulk photo backfill automation, on-demand summarization workers, and switching production web/Android until the API is verified.
+Play Store packaging, bulk photo backfill automation, on-demand summarization workers, and switching production web/Android until the API is verified. Blob binary upload via authenticated API is Phase 2 (metadata ingest is documented in azure-ad-ingest.md).

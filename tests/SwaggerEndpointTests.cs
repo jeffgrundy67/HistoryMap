@@ -43,5 +43,6 @@ public class SwaggerEndpointTests : IClassFixture<WebApplicationFactory<Program>
         response.IsSuccessStatusCode.Should().BeTrue();
         var json = await response.Content.ReadAsStringAsync();
         json.Should().Contain("History Map API");
+        json.Should().Contain("Bearer", because: "Swagger must advertise the Entra JWT Bearer security scheme");
     }
 }
