@@ -50,11 +50,9 @@ if (args.Contains("--seed", StringComparer.OrdinalIgnoreCase))
     Environment.Exit(code);
 }
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+// Enabled in all environments so Azure Production serves /swagger.
+app.UseSwagger();
+app.UseSwaggerUI();
 
 app.UseHttpsRedirection();
 app.UseCors();
